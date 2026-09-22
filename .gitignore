@@ -1,0 +1,24 @@
+# 大型数据 / 权重 / 输出目录
+checkpoints/
+output_own_train/
+output_own_test/
+experiments/
+tensorboard/
+test_sv_51.17/
+external/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# 日志 / 临时文件
+*.log
+*.tmp
+
+# 编辑器
+.vscode/
+.idea/
