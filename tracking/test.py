@@ -47,8 +47,23 @@ def main():
     parser.add_argument('--debug', type=int, default=0, help='Debug level.')
     parser.add_argument('--threads', type=int, default=6, help='Number of threads.')
     parser.add_argument('--num_gpus', type=int, default=2)
+    parser.add_argument('--encoder_depth', type=int, default=None)
+    parser.add_argument('--encoder_sweep', action='store_true')
+    parser.add_argument('--sweep_depths', type=str, default=None, help='Comma-separated encoder depths.')
+    parser.add_argument('--save_sweep_results', action='store_true')
+    parser.add_argument('--measure_encoder_latency', action='store_true')
 
     args = parser.parse_args()
+    if args.encoder_depth is not None:
+        os.environ['SEQTRACK_ENCODER_DEPTH'] = str(args.encoder_depth)
+    if args.encoder_sweep:
+        os.environ['SEQTRACK_ENCODER_SWEEP'] = '1'
+    if args.sweep_depths:
+        os.environ['SEQTRACK_SWEEP_DEPTHS'] = args.sweep_depths
+    if args.save_sweep_results:
+        os.environ['SEQTRACK_SAVE_SWEEP'] = '1'
+    if args.measure_encoder_latency:
+        os.environ['SEQTRACK_MEASURE_LATENCY'] = '1'
 
     try:
         seq_name = int(args.sequence)

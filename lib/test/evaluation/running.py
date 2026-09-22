@@ -98,6 +98,10 @@ def _save_tracker_output(seq: Sequence, tracker: Tracker, output: dict):
                 timings_file = '{}_time.txt'.format(base_results_path)
                 save_time(timings_file, data)
 
+        elif key == 'encoder_decoder_latency_ms':
+            timings_file = '{}_encoder_decoder_latency_ms.txt'.format(base_results_path)
+            save_time(timings_file, data)
+
 
 def run_sequence(seq: Sequence, tracker: Tracker, debug=False, num_gpu=8):
     """Runs a tracker on a sequence."""
@@ -148,6 +152,12 @@ def run_sequence(seq: Sequence, tracker: Tracker, debug=False, num_gpu=8):
         num_frames = len(output['time'])
 
     print('FPS: {}'.format(num_frames / exec_time))
+    if output.get('encoder_decoder_latency_ms'):
+        timings = output['encoder_decoder_latency_ms']
+        warmup = min(20, max(0, len(timings) - 1))
+        mean_ms = sum(timings[warmup:]) / len(timings[warmup:])
+        print('Encoder+decoder GPU latency after {} warmup frames: {:.3f} ms; FPS: {:.2f}'.format(
+            warmup, mean_ms, 1000.0 / mean_ms))
 
     if not debug:
         _save_tracker_output(seq, tracker, output)

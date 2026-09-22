@@ -75,6 +75,12 @@ class SEQTRACK(nn.Module):
         xz = self.encoder(images_list)
         return xz
 
+    def forward_encoder_depth(self, images_list, depth):
+        return [self.encoder.forward_depth(images_list, depth)]
+
+    def forward_encoder_sweep(self, images_list, depths=None):
+        return self.encoder.forward_sweep(images_list, depths)
+
     def forward_decoder(self, xz, sequence):
 
         xz_mem = xz[-1]

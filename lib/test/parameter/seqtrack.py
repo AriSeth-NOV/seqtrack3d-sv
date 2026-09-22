@@ -24,8 +24,27 @@ def parameters(yaml_name: str):
     # Network checkpoint path
     params.checkpoint = os.path.join("./checkpoints/train/seqtrack/%s/SEQTRACK_ep%04d.pth.tar" %
                                      (yaml_name, cfg.TEST.EPOCH))
+    if not os.path.isfile(params.checkpoint):
+        trained_checkpoint = os.path.join(save_dir, 'checkpoints/train/seqtrack', yaml_name,
+                                          'SEQTRACK_ep%04d.pth.tar' % cfg.TEST.EPOCH)
+        if os.path.isfile(trained_checkpoint):
+            params.checkpoint = trained_checkpoint
 
     # whether to save boxes from all queries
     params.save_all_boxes = False
+
+    params.encoder_depth = 12
+    params.encoder_sweep = False
+    params.sweep_depths = list(range(1, 13))
+    params.save_sweep_results = False
+    params.measure_encoder_latency = False
+    # Optional CLI overrides, inherited by evaluation worker processes.
+    params.encoder_depth_explicit = 'SEQTRACK_ENCODER_DEPTH' in os.environ
+    params.encoder_depth = int(os.environ.get('SEQTRACK_ENCODER_DEPTH', params.encoder_depth))
+    params.encoder_sweep = os.environ.get('SEQTRACK_ENCODER_SWEEP', '0') == '1'
+    if os.environ.get('SEQTRACK_SWEEP_DEPTHS'):
+        params.sweep_depths = [int(d) for d in os.environ['SEQTRACK_SWEEP_DEPTHS'].split(',')]
+    params.save_sweep_results = os.environ.get('SEQTRACK_SAVE_SWEEP', '0') == '1'
+    params.measure_encoder_latency = os.environ.get('SEQTRACK_MEASURE_LATENCY', '0') == '1'
 
     return params

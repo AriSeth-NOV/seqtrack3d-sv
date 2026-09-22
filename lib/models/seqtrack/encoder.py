@@ -35,6 +35,12 @@ class EncoderBase(nn.Module):
         xs = self.body(images_list)
         return xs
 
+    def forward_depth(self, images_list, depth):
+        return self.body.forward_features_depth(images_list, depth)
+
+    def forward_sweep(self, images_list, depths=None):
+        return self.body.forward_features_sweep(images_list, depths)
+
 
 class Encoder(EncoderBase):
     """ViT encoder."""

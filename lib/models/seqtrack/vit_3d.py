@@ -579,7 +579,7 @@ class VisionTransformer(nn.Module):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
-    def forward_features(self, images_list):
+    def _prepare_features(self, images_list):
         """
         images_list: [t1, t2, s]  (two templates then search)
         We will produce:
@@ -694,6 +694,10 @@ class VisionTransformer(nn.Module):
         # xz = torch.cat([search_tokens, template_tokens_fused], dim=1)
         xz = torch.cat([search_tokens, template_tokens_fused+template_tokens], dim=1)
         xz = self.pos_drop(xz)
+        return xz, geom_bias, diff_mask_attn
+
+    def forward_features(self, images_list):
+        xz, geom_bias, diff_mask_attn = self._prepare_features(images_list)
         for blk in self.blocks:
             xz = blk(xz, geom_bias=geom_bias, diff_mask=diff_mask_attn)
 
@@ -709,6 +713,27 @@ class VisionTransformer(nn.Module):
         
         xz = self.norm(xz)
         return xz
+
+    def forward_features_depth(self, images_list, depth):
+        if not 1 <= depth <= len(self.blocks):
+            raise ValueError(f"depth must be in [1, {len(self.blocks)}]")
+        xz, geom_bias, diff_mask_attn = self._prepare_features(images_list)
+        for blk in self.blocks[:depth]:
+            xz = blk(xz, geom_bias=geom_bias, diff_mask=diff_mask_attn)
+        return self.norm(xz)
+
+    def forward_features_sweep(self, images_list, depths=None):
+        depths = list(range(1, len(self.blocks) + 1)) if depths is None else list(depths)
+        if not depths or any(not 1 <= d <= len(self.blocks) for d in depths):
+            raise ValueError(f"depths must be in [1, {len(self.blocks)}]")
+        selected = set(depths)
+        xz, geom_bias, diff_mask_attn = self._prepare_features(images_list)
+        features = {}
+        for i, blk in enumerate(self.blocks[:max(selected)], start=1):
+            xz = blk(xz, geom_bias=geom_bias, diff_mask=diff_mask_attn)
+            if i in selected:
+                features[i] = self.norm(xz)
+        return features
 
     def forward(self, images_list):
         xz = self.forward_features(images_list)

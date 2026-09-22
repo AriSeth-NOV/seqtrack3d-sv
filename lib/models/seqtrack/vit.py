@@ -280,6 +280,18 @@ class VisionTransformer(nn.Module):
         self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
 
     def forward_features(self, images_list):
+        xz = self._embed_images(images_list)
+
+        for blk in self.blocks:   #batch is the first dimension.
+            if self.use_checkpoint:
+                xz = checkpoint.checkpoint(blk, xz)
+            else:
+                xz = blk(xz)
+
+        xz = self.norm(xz) # B,N,C
+        return xz
+
+    def _embed_images(self, images_list):
         num_template = self.num_template
         template_list = images_list[0:num_template]
         search_list = images_list[num_template:]
@@ -304,14 +316,34 @@ class VisionTransformer(nn.Module):
 
         xz = self.pos_drop(xz_feat)
 
-        for blk in self.blocks:   #batch is the first dimension.
+        return xz
+
+    def forward_features_depth(self, images_list, depth):
+        if not 1 <= depth <= len(self.blocks):
+            raise ValueError(f"depth must be in [1, {len(self.blocks)}]")
+        xz = self._embed_images(images_list)
+        for blk in self.blocks[:depth]:
             if self.use_checkpoint:
                 xz = checkpoint.checkpoint(blk, xz)
             else:
                 xz = blk(xz)
+        return self.norm(xz)
 
-        xz = self.norm(xz) # B,N,C
-        return xz
+    def forward_features_sweep(self, images_list, depths=None):
+        depths = list(range(1, len(self.blocks) + 1)) if depths is None else list(depths)
+        if not depths or any(not 1 <= d <= len(self.blocks) for d in depths):
+            raise ValueError(f"depths must be in [1, {len(self.blocks)}]")
+        selected = set(depths)
+        xz = self._embed_images(images_list)
+        features = {}
+        for i, blk in enumerate(self.blocks[:max(selected)], start=1):
+            if self.use_checkpoint:
+                xz = checkpoint.checkpoint(blk, xz)
+            else:
+                xz = blk(xz)
+            if i in selected:
+                features[i] = self.norm(xz)
+        return features
 
     def forward(self, images_list):
         xz = self.forward_features(images_list)

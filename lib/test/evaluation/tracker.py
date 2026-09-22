@@ -3,6 +3,7 @@ import os
 from collections import OrderedDict
 from lib.test.evaluation.environment import env_settings
 import time
+import csv
 import cv2 as cv
 import sys
 
@@ -51,6 +52,12 @@ class Tracker:
             self.results_dir = '{}/{}/{}_{:03d}'.format(env.results_path, self.name, self.parameter_name, self.run_id)
         if result_only:
             self.results_dir = '{}/{}'.format(env.results_path, self.name)
+        if self.name == 'seqtrack':
+            if os.environ.get('SEQTRACK_ENCODER_SWEEP') == '1':
+                depths = os.environ.get('SEQTRACK_SWEEP_DEPTHS', 'all').replace(',', '_')
+                self.results_dir += '_sweep_' + depths
+            elif os.environ.get('SEQTRACK_ENCODER_DEPTH'):
+                self.results_dir += '_depth_' + os.environ['SEQTRACK_ENCODER_DEPTH']
 
         tracker_module_abspath = os.path.abspath(os.path.join(os.path.dirname(__file__),
                                                               '..', 'tracker', '%s.py' % self.name))
@@ -104,6 +111,11 @@ class Tracker:
 
         output = {'target_bbox': [],
                   'time': []}
+        if getattr(tracker.params, 'measure_encoder_latency', False):
+            output['encoder_decoder_latency_ms'] = []
+        save_sweep = (getattr(tracker.params, 'encoder_sweep', False) and
+                      getattr(tracker.params, 'save_sweep_results', False))
+        sweep_rows = [] if save_sweep else None
         if tracker.params.save_all_boxes:
             output['all_boxes'] = []
             output['all_scores'] = []
@@ -139,10 +151,37 @@ class Tracker:
 
             info = seq.frame_info(frame_num)
             info['previous_output'] = prev_output
+            if getattr(tracker.params, 'encoder_sweep', False) and seq.ground_truth_rect is not None:
+                gt = seq.ground_truth_rect[frame_num]
+                info['gt_bbox'] = gt.tolist() if hasattr(gt, 'tolist') else list(gt)
 
             out = tracker.track(image, info)
+            if save_sweep:
+                for depth, result in out['sweep_results'].items():
+                    gt = info.get('gt_bbox', [None] * 4)
+                    row = {'sequence': seq.name, 'frame': frame_num, 'depth': depth}
+                    row.update(zip(('gt_x', 'gt_y', 'gt_w', 'gt_h'), gt))
+                    row.update(zip(('pred_x', 'pred_y', 'pred_w', 'pred_h'), result['box']))
+                    row.update({k: result.get(k) for k in ('iou', 'conf_x', 'conf_y', 'conf_w',
+                                                           'conf_h', 'conf_mean', 'conf_min',
+                                                           'token_x', 'token_y', 'token_w', 'token_h')})
+                    next_depth = next((d for d in sorted(out['sweep_results']) if d > depth), None)
+                    row['delta_to_next_depth'] = result.get(f'delta_to_{next_depth}')
+                    sweep_rows.append(row)
             prev_output = OrderedDict(out)
             _store_outputs(out, {'time': time.time() - start_time})
+
+        if save_sweep:
+            sweep_dir = os.path.join(self.results_dir, seq.name)
+            os.makedirs(sweep_dir, exist_ok=True)
+            columns = ('sequence', 'frame', 'depth', 'gt_x', 'gt_y', 'gt_w', 'gt_h',
+                       'pred_x', 'pred_y', 'pred_w', 'pred_h', 'iou', 'conf_x', 'conf_y',
+                       'conf_w', 'conf_h', 'conf_mean', 'conf_min', 'token_x', 'token_y',
+                       'token_w', 'token_h', 'delta_to_next_depth')
+            with open(os.path.join(sweep_dir, 'encoder_sweep.csv'), 'w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=columns)
+                writer.writeheader()
+                writer.writerows(sweep_rows)
 
         for key in ['target_bbox', 'all_boxes', 'all_scores']:
             if key in output and len(output[key]) <= 1:
@@ -285,6 +324,3 @@ class Tracker:
             return decode_img(image_file[0], image_file[1])
         else:
             raise ValueError("type of image_file should be str or list")
-
-
-
