@@ -131,6 +131,10 @@ def run_sequence(seq: Sequence, tracker: Tracker, debug=False, num_gpu=8):
         print('FPS: {}'.format(-1))
         return
 
+    sweep_memory = os.environ.get('SEQTRACK_ENCODER_SWEEP') == '1' and torch.cuda.is_available()
+    if sweep_memory:
+        torch.cuda.reset_peak_memory_stats()
+
     print('Tracker: {} {} {} ,  Sequence: {}'.format(tracker.name, tracker.parameter_name, tracker.run_id, seq.name))
 
     if debug:
@@ -152,6 +156,10 @@ def run_sequence(seq: Sequence, tracker: Tracker, debug=False, num_gpu=8):
         num_frames = len(output['time'])
 
     print('FPS: {}'.format(num_frames / exec_time))
+    if sweep_memory:
+        print('Sweep peak GPU memory: {:.2f} GiB allocated; {:.2f} GiB reserved'.format(
+            torch.cuda.max_memory_allocated() / (1024 ** 3),
+            torch.cuda.max_memory_reserved() / (1024 ** 3)))
     if output.get('encoder_decoder_latency_ms'):
         timings = output['encoder_decoder_latency_ms']
         warmup = min(20, max(0, len(timings) - 1))

@@ -13,7 +13,7 @@ from lib.test.evaluation.tracker import Tracker
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")
 
 def run_tracker(tracker_name, tracker_param, run_id=None, dataset_name='otb', sequence=None, debug=0, threads=0,
-                num_gpus=8):
+                num_gpus=8, sequences=None):
     """Run tracker on sequence or dataset.
     args:
         tracker_name: Name of tracking method.
@@ -27,7 +27,9 @@ def run_tracker(tracker_name, tracker_param, run_id=None, dataset_name='otb', se
 
     dataset = get_dataset(dataset_name)
 
-    if sequence is not None:
+    if sequences is not None:
+        dataset = [dataset[name] for name in sequences]
+    elif sequence is not None:
         dataset = [dataset[sequence]]
 
     trackers = [Tracker(tracker_name, tracker_param, dataset_name, run_id)]
@@ -44,6 +46,8 @@ def main():
                                                                           'lasot, trackingnet, lasot_extension_subset, tnl2k,'
                                                                           'lasot_lang, otb99_lang).')
     parser.add_argument('--sequence', type=str, default=None, help='Sequence number or name.')
+    parser.add_argument('--sequences', type=str, default=None,
+                        help='Comma-separated sequence names for a small diagnostic run.')
     parser.add_argument('--debug', type=int, default=0, help='Debug level.')
     parser.add_argument('--threads', type=int, default=6, help='Number of threads.')
     parser.add_argument('--num_gpus', type=int, default=2)
@@ -54,6 +58,11 @@ def main():
     parser.add_argument('--measure_encoder_latency', action='store_true')
 
     args = parser.parse_args()
+    if args.sequence is not None and args.sequences is not None:
+        parser.error('--sequence and --sequences cannot be used together')
+    sequence_names = [name.strip() for name in args.sequences.split(',')] if args.sequences else None
+    if sequence_names is not None and (not all(sequence_names) or len(set(sequence_names)) != len(sequence_names)):
+        parser.error('--sequences must contain unique, nonempty names')
     if args.encoder_depth is not None:
         os.environ['SEQTRACK_ENCODER_DEPTH'] = str(args.encoder_depth)
     if args.encoder_sweep:
@@ -71,7 +80,7 @@ def main():
         seq_name = args.sequence
 
     run_tracker(args.tracker_name, args.tracker_param, args.runid, args.dataset_name, seq_name, args.debug,
-                args.threads, num_gpus=args.num_gpus)
+                args.threads, num_gpus=args.num_gpus, sequences=sequence_names)
 
 
 if __name__ == '__main__':
