@@ -2,6 +2,8 @@ import numpy as np
 import multiprocessing
 import os
 import sys
+import json
+import time
 from itertools import product
 from collections import OrderedDict
 from lib.test.evaluation import Sequence, Tracker
@@ -180,6 +182,7 @@ def run_dataset(dataset, trackers, debug=False, threads=0, num_gpus=8):
         threads: Number of threads to use (default 0).
     """
     multiprocessing.set_start_method('spawn', force=True)
+    run_start = time.perf_counter()
 
     print('Evaluating {:4d} trackers on {:5d} sequences'.format(len(trackers), len(dataset)))
 
@@ -199,3 +202,15 @@ def run_dataset(dataset, trackers, debug=False, threads=0, num_gpus=8):
         with multiprocessing.Pool(processes=threads) as pool:
             pool.starmap(run_sequence, param_list)
     print('Done')
+    if os.environ.get('SEQTRACK_ENCODER_SWEEP') == '1':
+        elapsed = time.perf_counter() - run_start
+        print('Sweep wall time: {:.1f} seconds'.format(elapsed))
+        for tracker_info in trackers:
+            os.makedirs(tracker_info.results_dir, exist_ok=True)
+            names = [seq.name for seq in dataset]
+            completed = [name for name in names if os.path.isfile(
+                os.path.join(tracker_info.results_dir, name, 'encoder_sweep.csv'))]
+            with open(os.path.join(tracker_info.results_dir, 'run_summary.json'), 'w') as file:
+                json.dump({'wall_time_seconds': elapsed, 'requested_sequences': len(names),
+                           'csv_sequences': len(completed), 'missing_csv_sequences': sorted(set(names) - set(completed))},
+                          file, indent=2)

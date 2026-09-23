@@ -83,11 +83,12 @@ class SeqTrackDecoder(nn.Module):
 
 
     def inference(self, src, pos_embed, seq, vocab_embed,
-                  window, seq_format):
+                  window, seq_format, log_raw=False):
         # flatten NxCxHxW to HWxNxC
         n, bs, c = src.shape
         memory = src
         confidence_list = []
+        raw_statistics = {'top1': [], 'top2': [], 'margin': [], 'entropy': []} if log_raw else None
         box_pos = [0, 1, 2, 3] # the position of bounding box
         center_pos = [0, 1]  # the position of x_center and y_center
         if seq_format == 'whxy':
@@ -109,6 +110,17 @@ class SeqTrackDecoder(nn.Module):
             if i in box_pos:
                 out = out[:, :self.bins] # only include the coordinate values' confidence
 
+            if log_raw:
+                # The top probabilities are the original, pre-window softmax values.
+                # Entropy conditions on coordinate tokens (the only valid inference choices).
+                top2 = out.topk(dim=-1, k=2).values
+                coord_probs = out / out.sum(dim=-1, keepdim=True).clamp_min(1e-12)
+                entropy = -(coord_probs * coord_probs.clamp_min(1e-12).log()).sum(dim=-1)
+                raw_statistics['top1'].append(top2[:, 0])
+                raw_statistics['top2'].append(top2[:, 1])
+                raw_statistics['margin'].append(top2[:, 0] - top2[:, 1])
+                raw_statistics['entropy'].append(entropy)
+
             if ((i in center_pos) and (window!=None)):
                 out = out * window # window penalty
 
@@ -119,6 +131,9 @@ class SeqTrackDecoder(nn.Module):
         out_dict = {}
         out_dict['pred_boxes'] = seq[:, -self.num_coordinates:] # Discard the START token, only get the bounding box
         out_dict['confidence'] = torch.cat(confidence_list, dim=-1)[:, :]
+        if log_raw:
+            out_dict['raw_statistics'] = {name: torch.stack(values, dim=-1)
+                                          for name, values in raw_statistics.items()}
 
         return out_dict
 

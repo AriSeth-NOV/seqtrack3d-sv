@@ -116,6 +116,11 @@ class Tracker:
         save_sweep = (getattr(tracker.params, 'encoder_sweep', False) and
                       getattr(tracker.params, 'save_sweep_results', False))
         sweep_rows = [] if save_sweep else None
+        raw_fields = tuple(f'raw_{coordinate}_{metric}' for coordinate in 'xywh'
+                           for metric in ('top1', 'top2', 'margin', 'entropy')) + (
+                               'raw_conf_mean', 'raw_conf_min', 'raw_entropy_mean',
+                               'raw_entropy_max', 'raw_margin_mean', 'raw_margin_min',
+                               'sequence_raw_logprob', 'search_cos_mean', 'search_cos_median')
         if tracker.params.save_all_boxes:
             output['all_boxes'] = []
             output['all_scores'] = []
@@ -159,12 +164,15 @@ class Tracker:
             if save_sweep:
                 for depth, result in out['sweep_results'].items():
                     gt = info.get('gt_bbox', [None] * 4)
-                    row = {'sequence': seq.name, 'frame': frame_num, 'depth': depth}
+                    dataset = ('sv248s' if seq.dataset == 'sv248s_test_dataset' else
+                               'viso' if seq.dataset == 'viso_dataset' else seq.dataset)
+                    row = {'dataset': dataset, 'sequence': seq.name, 'frame': frame_num, 'depth': depth}
                     row.update(zip(('gt_x', 'gt_y', 'gt_w', 'gt_h'), gt))
                     row.update(zip(('pred_x', 'pred_y', 'pred_w', 'pred_h'), result['box']))
                     row.update({k: result.get(k) for k in ('iou', 'conf_x', 'conf_y', 'conf_w',
                                                            'conf_h', 'conf_mean', 'conf_min',
                                                            'token_x', 'token_y', 'token_w', 'token_h')})
+                    row.update({key: result.get(key) for key in raw_fields})
                     next_depth = next((d for d in sorted(out['sweep_results']) if d > depth), None)
                     row['delta_to_next_depth'] = result.get(f'delta_to_{next_depth}')
                     sweep_rows.append(row)
@@ -174,10 +182,11 @@ class Tracker:
         if save_sweep:
             sweep_dir = os.path.join(self.results_dir, seq.name)
             os.makedirs(sweep_dir, exist_ok=True)
-            columns = ('sequence', 'frame', 'depth', 'gt_x', 'gt_y', 'gt_w', 'gt_h',
+            columns = ('dataset', 'sequence', 'frame', 'depth', 'gt_x', 'gt_y', 'gt_w', 'gt_h',
                        'pred_x', 'pred_y', 'pred_w', 'pred_h', 'iou', 'conf_x', 'conf_y',
                        'conf_w', 'conf_h', 'conf_mean', 'conf_min', 'token_x', 'token_y',
-                       'token_w', 'token_h', 'delta_to_next_depth')
+                       'token_w', 'token_h',
+                       *raw_fields, 'delta_to_next_depth')
             with open(os.path.join(sweep_dir, 'encoder_sweep.csv'), 'w', newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=columns)
                 writer.writeheader()

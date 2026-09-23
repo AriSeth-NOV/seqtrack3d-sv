@@ -106,7 +106,7 @@ class SEQTRACK(nn.Module):
 
         return out
 
-    def inference_decoder(self, xz, sequence, window=None, seq_format='xywh'):
+    def inference_decoder(self, xz, sequence, window=None, seq_format='xywh', log_raw=False):
         # Forward the decoder
         xz_mem = xz[-1]
         B, _, _ = xz_mem.shape
@@ -128,7 +128,7 @@ class SEQTRACK(nn.Module):
         out = self.decoder.inference(dec_mem,
                                     self.pos_embed.permute(1,0,2).expand(-1,B,-1),
                                     sequence, self.vocab_embed,
-                                    window, seq_format)
+                                    window, seq_format, log_raw=log_raw)
 
         return out
 

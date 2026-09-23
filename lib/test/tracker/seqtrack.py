@@ -1,5 +1,6 @@
 from lib.test.tracker.basetracker import BaseTracker
 import torch
+import torch.nn.functional as F
 from lib.test.tracker.seqtrack_utils import sample_target, transform_image_to_crop
 import cv2
 from lib.utils.box_ops import box_xywh_to_xyxy, box_xyxy_to_cxcywh
@@ -86,7 +87,7 @@ class SEQTRACK(BaseTracker):
                 for depth in depths:
                     decoded = self.network.inference_decoder(
                         xz=[features[depth]], sequence=self.init_seq,
-                        window=self.hanning, seq_format=self.seq_format)
+                        window=self.hanning, seq_format=self.seq_format, log_raw=True)
                     box = self._decode_output_to_box(decoded, resize_factor, H, W)
                     result = {'box': [float(v) for v in box]}
                     if gt_bbox is not None:
@@ -100,6 +101,24 @@ class SEQTRACK(BaseTracker):
                     tokens = decoded['pred_boxes'][0].tolist()
                     result.update(zip(('token_x', 'token_y', 'token_w', 'token_h'),
                                       (int(tokens[i]) for i in conf_indices)))
+                    raw = decoded['raw_statistics']
+                    for name, values in raw.items():
+                        result.update({f'raw_{coordinate}_{name}': float(values[0, conf_indices[j]].item())
+                                       for j, coordinate in enumerate(('x', 'y', 'w', 'h'))})
+                    raw_top1 = raw['top1'][0]
+                    result['raw_conf_mean'] = float(raw_top1.mean().item())
+                    result['raw_conf_min'] = float(raw_top1.min().item())
+                    result['raw_entropy_mean'] = float(raw['entropy'][0].mean().item())
+                    result['raw_entropy_max'] = float(raw['entropy'][0].max().item())
+                    result['raw_margin_mean'] = float(raw['margin'][0].mean().item())
+                    result['raw_margin_min'] = float(raw['margin'][0].min().item())
+                    result['sequence_raw_logprob'] = float(raw_top1.clamp_min(1e-12).log().sum().item())
+                    if depth > 1 and depth - 1 in features:
+                        search_tokens = self.network.num_patch_x
+                        similarity = F.cosine_similarity(features[depth - 1][:, :search_tokens],
+                                                         features[depth][:, :search_tokens], dim=-1)
+                        result['search_cos_mean'] = float(similarity.mean().item())
+                        result['search_cos_median'] = float(torch.quantile(similarity.float(), 0.5).item())
                     depth_results[depth] = result
                 for d1, d2 in zip(depths[:-1], depths[1:]):
                     if 'iou' in depth_results[d1] and 'iou' in depth_results[d2]:
